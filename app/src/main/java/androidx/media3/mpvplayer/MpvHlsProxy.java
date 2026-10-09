@@ -68,6 +68,8 @@ import okhttp3.ResponseBody;
 public final class MpvHlsProxy extends NanoHTTPD {
 
     private static final String TAG = "mpv-proxy";
+    /** Redirects are followed by hand in fetch() so every hop can be re-validated. */
+    private static final int MAX_REDIRECTS = 5;
     private static final String MIME_M3U8 = "application/vnd.apple.mpegurl; charset=utf-8";
     private static final String MIME_TS = "video/MP2T";
     private static final String MIME_BINARY = "application/octet-stream";
@@ -102,10 +104,14 @@ public final class MpvHlsProxy extends NanoHTTPD {
     public MpvHlsProxy(int kernel) {
         super("127.0.0.1", 0);
         this.kernel = PlayerSetting.sanitizePlayer(kernel);
+        // Redirects are followed by hand in fetch() so each hop gets re-checked; a client left to
+        // follow them itself would connect to whatever the previous response pointed at.
         client = OkHttp.player().newBuilder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS)
+                .followRedirects(false)
+                .followSslRedirects(false)
                 .build();
         sessions = new ConcurrentHashMap<>();
         sessionStats = new ConcurrentHashMap<>();
@@ -428,7 +434,6 @@ public final class MpvHlsProxy extends NanoHTTPD {
     }
 
     private okhttp3.Response fetch(Session session, String url, @Nullable String range, boolean identityEncoding) throws IOException {
-        if (!UrlSafety.isSafeMediaUrl(url)) throw new SecurityException("Unsafe stream url: " + shortUrl(url));
         Request.Builder builder = new Request.Builder().url(url);
         for (Map.Entry<String, String> entry : session.headers.entrySet()) {
             if (TextUtils.isEmpty(entry.getKey()) || TextUtils.isEmpty(entry.getValue())) continue;
@@ -436,7 +441,38 @@ public final class MpvHlsProxy extends NanoHTTPD {
         }
         if (identityEncoding) builder.header("Accept-Encoding", "identity");
         if (!TextUtils.isEmpty(range)) builder.header("Range", range);
-        return client.newCall(builder.build()).execute();
+        return executeChecked(builder.build());
+    }
+
+    /**
+     * Follows redirects one hop at a time, re-checking every target with
+     * {@link UrlSafety#isSafeMediaUrl}.
+     *
+     * <p>Validating only the url passed to fetch() is not enough: a public host can answer with a
+     * 302 pointing at the loopback device or the link-local metadata address, and a client that
+     * follows redirects on its own connects to it anyway — the SSRF the guard exists to stop.
+     * Redirects still work (playlists and segments commonly redirect), they are just inspected,
+     * and the relaxed media policy is re-applied per hop so LAN playback keeps working.</p>
+     */
+    private okhttp3.Response executeChecked(Request request) throws IOException {
+        Request current = request;
+        for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+            if (!UrlSafety.isSafeMediaUrl(current.url().toString())) throw new SecurityException("Unsafe stream url: " + shortUrl(current.url().toString()));
+            okhttp3.Response response = client.newCall(current).execute();
+            if (!isRedirect(response.code())) return response;
+            String location = response.header("Location");
+            if (TextUtils.isEmpty(location)) return response;
+            response.close();
+            if (hop == MAX_REDIRECTS) break;
+            okhttp3.HttpUrl next = current.url().resolve(location);
+            if (next == null) throw new IOException("Unsafe redirect target");
+            current = current.newBuilder().url(next).build();
+        }
+        throw new IOException("Too many redirects");
+    }
+
+    private static boolean isRedirect(int code) {
+        return code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
     }
 
     private String applyAdblock(String text, int session, String url) {

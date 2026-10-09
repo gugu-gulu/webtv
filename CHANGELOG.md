@@ -1,11 +1,12 @@
 # Changelog
 
-## 未发布 — 两处安全修复（m3u8 代理的 SSRF 重定向绕过 / DASH XML 解析）
+## 未发布 — 三处安全修复（重定向绕过 ×2、DASH XML 解析）
 
 ### 修复
 
 - `server/process/M3u8`：此前只对查询参数里的 URL 做 `UrlSafety` 校验，随后交给**默认跟随重定向**的 OkHttp 客户端。上游只要返回 `302` 指向内网地址即可绕过检查，把设备变成 SSRF 中继。改为**手动逐跳跟随、并对每一跳重新校验**——重定向功能不受影响（不少直播源依赖 302 跳转），playlist 改写所用的 base 仍是最后一跳的 URL，行为不变。
-- `androidx/media3/mpvplayer/MpvHlsProxy`：解析来自播放源的 DASH manifest 时，`DocumentBuilderFactory` 默认会解析 DTD 与外部实体，构造的 manifest 可借此访问内网地址或触发实体膨胀耗尽内存。已禁用 DOCTYPE 声明、外部实体与外部 DTD，并关闭 XInclude 与实体展开；该改写逻辑在解析失败时本就回退原文，因此功能无损。
+- `androidx/media3/mpvplayer/MpvHlsProxy`（请求路径）：同一类问题——`fetch()` 校验了 `isSafeMediaUrl`，但它使用的客户端同样会跟随重定向，`302` 指向回环或 `169.254` 元数据地址即可绕过。已改为逐跳重新校验，并保留放宽的媒体策略（局域网流媒体照常播放）。
+- `androidx/media3/mpvplayer/MpvHlsProxy`（XML 解析）：解析来自播放源的 DASH manifest 时，`DocumentBuilderFactory` 默认会解析 DTD 与外部实体，构造的 manifest 可借此访问内网地址或触发实体膨胀耗尽内存。已禁用 DOCTYPE 声明、外部实体与外部 DTD，并关闭 XInclude 与实体展开；该改写逻辑在解析失败时本就回退原文，因此功能无损。
 
 ### 说明
 

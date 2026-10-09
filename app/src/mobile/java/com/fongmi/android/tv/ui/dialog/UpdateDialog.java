@@ -10,6 +10,7 @@ import androidx.viewbinding.ViewBinding;
 import com.fongmi.android.tv.R;
 import com.fongmi.android.tv.databinding.DialogUpdateBinding;
 import com.fongmi.android.tv.impl.UpdateListener;
+import com.fongmi.android.tv.setting.Setting;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
@@ -59,10 +60,22 @@ public class UpdateDialog extends BaseAlertDialog {
 
     @Override
     protected MaterialAlertDialogBuilder getBuilder() {
-        // Browser first: an in-app download ties the phone up for the whole transfer,
-        // while the browser keeps going in the background. Downloading in the app is
-        // still offered, as the secondary action.
-        return builder().setTitle(title).setView(getBinding().getRoot()).setPositiveButton(R.string.update_browser, null).setNeutralButton(R.string.update_in_app, null).setNegativeButton(R.string.dialog_negative, null).setCancelable(false);
+        // Which action leads follows the user's setting; the other stays available as the
+        // secondary button. The default is the browser, because an in-app download keeps
+        // the phone occupied for the whole transfer.
+        return builder().setTitle(title).setView(getBinding().getRoot()).setPositiveButton(browserFirst() ? R.string.update_browser : R.string.update_in_app, null).setNeutralButton(browserFirst() ? R.string.update_in_app : R.string.update_browser, null).setNegativeButton(R.string.dialog_negative, null).setCancelable(false);
+    }
+
+    private boolean browserFirst() {
+        return !Setting.UPDATE_PATH_APP.equals(Setting.getUpdatePath());
+    }
+
+    private int downloadButton() {
+        return browserFirst() ? AlertDialog.BUTTON_NEUTRAL : AlertDialog.BUTTON_POSITIVE;
+    }
+
+    private int browserButton() {
+        return browserFirst() ? AlertDialog.BUTTON_POSITIVE : AlertDialog.BUTTON_NEUTRAL;
     }
 
     @Override
@@ -80,8 +93,8 @@ public class UpdateDialog extends BaseAlertDialog {
         AlertDialog dialog = (AlertDialog) getDialog();
         if (dialog == null) return;
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(view -> listener.onCancel(view));
-        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(view -> listener.onConfirm(view));
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> listener.onBrowser(view));
+        dialog.getButton(downloadButton()).setOnClickListener(view -> listener.onConfirm(view));
+        dialog.getButton(browserButton()).setOnClickListener(view -> listener.onBrowser(view));
     }
 
     public void setProgress(int progress) {
@@ -93,10 +106,10 @@ public class UpdateDialog extends BaseAlertDialog {
         setDownloadText(text);
     }
 
-    /** Progress belongs on the in-app download button, which is the neutral one here. */
+    /** Progress belongs on whichever button starts the in-app download. */
     private void setDownloadText(String text) {
         AlertDialog dialog = (AlertDialog) getDialog();
-        if (dialog != null) dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setText(text);
+        if (dialog != null) dialog.getButton(downloadButton()).setText(text);
     }
 
     private String formatSpeed(long speed) {

@@ -1347,6 +1347,7 @@ WebHomeTV 是播放器外殼，不內建內容源，請使用合法設定。</st
     <string name="update_in_app">應用程式內下載</string>
     <string name="update_browser">瀏覽器下載</string>
     <string name="update_link_copied">連結已複製，可用瀏覽器開啟</string>
+    <string name="update_path">預設更新方式</string>
     <string-array name="audio_preset_names">
         <item>關閉</item>
         <item>自然</item>

@@ -570,6 +570,22 @@ public class Setting {
         Github.setMirror(mirror);
     }
 
+    public static final String UPDATE_PATH_BROWSER = "browser";
+    public static final String UPDATE_PATH_APP = "app";
+
+    /**
+     * Which action the update prompt offers as its primary button: "browser" hands the
+     * download to the system browser so the phone stays free, "app" downloads in the app.
+     * Phones only — a TV has no browser, so its prompt always downloads in the app.
+     */
+    public static String getUpdatePath() {
+        return Prefers.getString("update_path", UPDATE_PATH_BROWSER);
+    }
+
+    public static void putUpdatePath(String path) {
+        Prefers.put("update_path", path);
+    }
+
     public static String getUpdateGithubProxy() {
         return Prefers.getString("update_github_proxy", "direct");
     }

@@ -655,6 +655,9 @@ WebHomeTV is a player shell. It does not include content sources. Please use law
     <string name="update_export_failed">Update downloaded. Unable to export to public storage; please enable storage access and retry.</string>
     <string name="update_manual_title">Download update</string>
     <string name="update_manual_msg">Copy the link below and open it in your browser to download</string>
+    <string name="update_in_app">Download in app</string>
+    <string name="update_browser">Download in browser</string>
+    <string name="update_link_copied">Link copied, open it in your browser</string>
     <string name="update_canceled">Update canceled</string>
     <string name="update_download_invalid">Downloaded file is invalid</string>
     <string name="update_download_incomplete">Download incomplete, please retry</string>

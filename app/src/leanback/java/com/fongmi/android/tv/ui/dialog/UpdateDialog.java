@@ -34,6 +34,14 @@ public class UpdateDialog extends BaseAlertDialog {
         return this;
     }
 
+    /**
+     * Accepted for API parity with the phone dialog: Updater builds both. A TV has no
+     * browser to hand the transfer off to, so the link is not shown here.
+     */
+    public UpdateDialog link(String link) {
+        return this;
+    }
+
     public UpdateDialog listener(UpdateListener listener) {
         this.listener = listener;
         return this;

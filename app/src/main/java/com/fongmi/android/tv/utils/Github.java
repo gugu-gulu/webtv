@@ -82,6 +82,12 @@ public class Github {
         return getUrl(name + ".apk");
     }
 
+    public static String getGithubRelease(String file) {
+        // GITHUB already ends with /releases/latest/download, which is the only
+        // asset path GitHub serves: /releases/latest/<file> answers 404.
+        return GITHUB + "/" + file;
+    }
+
     public static String getServerApk(String name) {
         return SERVER + "/apk/" + name;
     }

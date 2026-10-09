@@ -45,6 +45,11 @@ import java.util.Set;
 
 public class Updater implements UpdateListener, UpdateTransfer.Callback {
 
+    // The release page. Only used as a hand-off target when the exact asset name is
+    // unknown; a direct asset link must go through Github.getGithubRelease(), because
+    // GitHub serves assets under /releases/latest/download/ and answers 404 on
+    // /releases/latest/<file> — which is what this class used to build, leaving the
+    // GitHub route dead and silently covered by the mirrors.
     private static final String GITHUB_RELEASE = "https://github.com/motao123/webtv/releases/latest";
     private static final String CNB_RELEASE = "https://cnb.cool/code_free/webtv/-/git/raw/main/apk";
     // A dead route is much rarer than a transient network error: retry the same
@@ -54,6 +59,9 @@ public class Updater implements UpdateListener, UpdateTransfer.Callback {
     private UpdateDialog dialog;
     private FragmentActivity activity;
     private Update update;
+    // Link shown in the prompt and handed to the browser. Resolved once when the
+    // prompt opens so what is displayed and what gets opened cannot disagree.
+    private String manual;
     private List<String> routes;
     private int routeIndex;
     private int routeAttempt;
@@ -136,7 +144,7 @@ public class Updater implements UpdateListener, UpdateTransfer.Callback {
         update.sha256 = object.optString("sha256");
         update.cnb = object.optBoolean("cnb", true);
         String apk = TextUtils.isEmpty(update.apk) ? getFlavor() + ".apk" : update.apk;
-        update.githubUrl = GITHUB_RELEASE + "/" + fileName(apk);
+        update.githubUrl = Github.getGithubRelease(fileName(apk));
         update.cnbUrl = CNB_RELEASE + "/" + fileName(apk);
         return update;
     }
@@ -155,11 +163,25 @@ public class Updater implements UpdateListener, UpdateTransfer.Callback {
 
     private void show(FragmentActivity activity, Update update) {
         dismiss();
+        manual = null;
         dialog = UpdateDialog.create()
                 .title(ResUtil.getString(R.string.update_version, TextUtils.isEmpty(update.versionName) ? update.name : update.versionName))
-                .desc(update.getText() + "\n\n" + ResUtil.getString(R.string.update_current_version, BuildConfig.VERSION_NAME) + "\n" + ResUtil.getString(R.string.update_manual_msg))
+                .desc(update.getText() + "\n\n" + ResUtil.getString(R.string.update_current_version, BuildConfig.VERSION_NAME))
+                .link(manual())
                 .listener(this)
                 .show(activity);
+    }
+
+    private String manualUrl() {
+        List<String> list = buildRoutes(update);
+        if (!list.isEmpty()) return list.get(0);
+        if (update != null && !TextUtils.isEmpty(update.githubUrl)) return update.githubUrl;
+        return GITHUB_RELEASE;
+    }
+
+    private String manual() {
+        if (manual == null) manual = manualUrl();
+        return manual;
     }
 
     @Override
@@ -170,7 +192,7 @@ public class Updater implements UpdateListener, UpdateTransfer.Callback {
         }
         List<String> list = buildRoutes(update);
         if (list.isEmpty()) {
-            copyAndOpen(Github.getApk(getFlavor()), GITHUB_RELEASE + "/" + getFlavor() + ".apk");
+            copyAndOpen(manual(), GITHUB_RELEASE);
             dismiss();
             return;
         }
@@ -192,14 +214,19 @@ public class Updater implements UpdateListener, UpdateTransfer.Callback {
             boolean serverFirst = "server".equals(Github.getMirror()) || "auto".equals(Github.getMirror());
             if (serverFirst) result.add(serverUrl);
             GithubProxy.Config proxy = GithubProxy.resolve(Setting.getUpdateGithubProxy(), Setting.getUpdateGithubProxyUrl(), Setting.getUpdateGithubProxyMode());
-            String primary = update == null || TextUtils.isEmpty(update.githubUrl) ? Github.getApk(getFlavor()) : update.githubUrl;
-            if (proxy != null && !GithubProxy.DIRECT.equals(proxy.id)) {
-                try {
-                    result.add(proxy.rewrite(primary));
-                } catch (Exception ignored) {
+            // Without an asset name there is no GitHub route at all: a name guessed
+            // from the flavor would lack the version the release actually published,
+            // which is how this used to build a URL that 404s.
+            String primary = update == null ? "" : update.githubUrl;
+            if (!TextUtils.isEmpty(primary)) {
+                if (proxy != null && !GithubProxy.DIRECT.equals(proxy.id)) {
+                    try {
+                        result.add(proxy.rewrite(primary));
+                    } catch (Exception ignored) {
+                    }
                 }
+                result.add(primary);
             }
-            result.add(primary);
             if (!serverFirst) result.add(serverUrl);
             if (update != null && update.cnb && !TextUtils.isEmpty(update.cnbUrl)) result.add(update.cnbUrl);
         } catch (Exception e) {
@@ -246,6 +273,21 @@ public class Updater implements UpdateListener, UpdateTransfer.Callback {
     }
 
     @Override
+    public void onBrowser(View view) {
+        // The user wants the browser instead: stop the in-app download first so it
+        // does not keep running in the background, then hand the link over.
+        if (downloading) {
+            canceled = true;
+            downloading = false;
+            if (transfer != null) transfer.cancel();
+            transfer = null;
+            routes = null;
+        }
+        openUrl(manual());
+        dismiss();
+    }
+
+    @Override
     public void progress(int progress, long bytes, long total, long speed, long elapsed) {
         if (canceled || !downloading || dialog == null) return;
         if (total <= 0 && update != null) total = update.size;
@@ -261,7 +303,7 @@ public class Updater implements UpdateListener, UpdateTransfer.Callback {
         downloading = false;
         routes = null;
         Notify.show(R.string.update_failed);
-        copyAndOpen(Github.getApk(getFlavor()), GITHUB_RELEASE + "/" + getFlavor() + ".apk");
+        copyAndOpen(manual(), GITHUB_RELEASE);
         dismiss();
     }
 
@@ -307,7 +349,7 @@ public class Updater implements UpdateListener, UpdateTransfer.Callback {
             SpiderDebug.log(e);
         }
         Notify.show(R.string.update_export_failed);
-        copyAndOpen(Github.getApk(getFlavor()), GITHUB_RELEASE + "/" + getFlavor() + ".apk");
+        copyAndOpen(manual(), GITHUB_RELEASE);
         dismiss();
     }
 
@@ -404,6 +446,7 @@ public class Updater implements UpdateListener, UpdateTransfer.Callback {
     }
 
     private void openUrl(String url) {
+        // Copy first: if nothing here can open the link, the user still has it.
         try {
             ClipboardManager cm = (ClipboardManager) App.get().getSystemService(Context.CLIPBOARD_SERVICE);
             cm.setPrimaryClip(ClipData.newPlainText("update", url));
@@ -412,10 +455,16 @@ public class Updater implements UpdateListener, UpdateTransfer.Callback {
         try {
             Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            App.get().startActivity(intent);
+            if (!App.get().getPackageManager().queryIntentActivities(intent, 0).isEmpty()) {
+                App.get().startActivity(intent);
+                return;
+            }
         } catch (Exception e) {
-            Notify.show(ResUtil.getString(R.string.update_failed));
+            SpiderDebug.log(e);
         }
+        // No browser to hand off to (typical on a TV): the link is already on the
+        // clipboard, so say that instead of reporting a failure nobody can act on.
+        Notify.show(R.string.update_link_copied);
     }
 
     private static boolean isCnb(String url) {

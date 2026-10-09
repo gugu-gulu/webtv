@@ -28,6 +28,7 @@ jobs:
       - name: Check release scripts
         run: |
           python3 scripts/test_apk_index.py
+          python3 scripts/check_i18n.py
           bash -n scripts/pull_apk.sh
           bash -n scripts/bump_version.sh
 

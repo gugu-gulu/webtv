@@ -254,6 +254,16 @@ public final class MpvHlsProxy extends NanoHTTPD {
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             factory.setNamespaceAware(true);
+            // The manifest is fetched from whatever source the user is playing, so it is untrusted
+            // input. A default parser resolves DTDs and external entities: a crafted manifest could
+            // then make the device fetch internal URLs (SSRF) or blow up on entity expansion.
+            // Tightening this only costs the rewrite, which bails out to the original text anyway.
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
             Document document = factory.newDocumentBuilder().parse(new InputSource(new StringReader(text)));
             pruneDashAlternatives(document);
             NodeList representations = document.getElementsByTagNameNS("*", "Representation");

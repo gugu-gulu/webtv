@@ -25,6 +25,7 @@ import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.ResponseBody;
 
@@ -32,6 +33,12 @@ import okhttp3.ResponseBody;
 public class M3u8 implements Process {
 
     private static final String TAG = "live-m3u8";
+    /**
+     * Redirects are followed by hand so every hop can be re-validated; see {@link #executeChecked}.
+     * The client therefore must not follow them itself.
+     */
+    private static final int MAX_REDIRECTS = 5;
+    private static final OkHttpClient CLIENT = OkHttp.player().newBuilder().followRedirects(false).followSslRedirects(false).build();
     private static final String MIME_M3U8 = "application/vnd.apple.mpegurl; charset=utf-8";
     private static final String DEFAULT_UA = "okhttp/4.9.2";
     private static final String DEFAULT_REFERER = "https://www.4gtv.tv/";
@@ -54,7 +61,7 @@ public class M3u8 implements Process {
         try {
             Request request = request(session, target);
             long start = System.currentTimeMillis();
-            upstream = OkHttp.player().newCall(request).execute();
+            upstream = executeChecked(request);
             SpiderDebug.log(TAG, "%s %s -> %s in %sms", request.method(), shortUrl(target), upstream.code(), System.currentTimeMillis() - start);
             ResponseBody body = upstream.body();
             if (body == null) {
@@ -80,6 +87,36 @@ public class M3u8 implements Process {
         if (!TextUtils.isEmpty(range)) builder.header("Range", range);
         if (session.getMethod() == NanoHTTPD.Method.HEAD) builder.head();
         return builder.build();
+    }
+
+    /**
+     * Follows redirects one hop at a time, re-checking every target with {@link UrlSafety}.
+     *
+     * <p>Checking only the URL from the query param is not enough: a perfectly public host can
+     * answer with a 302 pointing at the router, an intranet address or the cloud metadata service,
+     * and a client left to follow redirects on its own will happily connect to it — which is the
+     * very SSRF the caller's guard exists to prevent. Redirects still work, they are just
+     * inspected; the URL of the final hop is what the caller uses as the playlist base, so the
+     * rewrite behaviour is unchanged.</p>
+     */
+    private okhttp3.Response executeChecked(Request request) throws IOException {
+        Request current = request;
+        for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+            okhttp3.Response response = CLIENT.newCall(current).execute();
+            if (!isRedirect(response.code())) return response;
+            String location = response.header("Location");
+            if (TextUtils.isEmpty(location)) return response;
+            response.close();
+            if (hop == MAX_REDIRECTS) break;
+            HttpUrl next = current.url().resolve(location);
+            if (next == null || !UrlSafety.isSafeHttpUrl(next.toString())) throw new IOException("Unsafe redirect target");
+            current = current.newBuilder().url(next).build();
+        }
+        throw new IOException("Too many redirects");
+    }
+
+    private static boolean isRedirect(int code) {
+        return code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
     }
 
     private Response playlist(okhttp3.Response upstream, ResponseBody body) throws IOException {

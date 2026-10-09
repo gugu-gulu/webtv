@@ -5,12 +5,12 @@
 ### 修复
 
 - 17 条 `remote_public_*` 字符串（公网远程开关、一次性配对码、吊销设备身份、中继地址提示等）此前只有英文，简体与繁体中文均缺失。Android 对缺失的翻译会**静默回退显示英文**——构建和运行都不报错，所以界面上一直是这样中英混着的。已按英文顺序补齐两版翻译。
-- 新增 `scripts/check_i18n.py` 并接入 CI，跨 main / mobile / leanback 三个 source set 比对默认（英文）与各语言，报告四类问题：**缺失的键**（会回退英文）、**多余的键**、**占位符或 `xliff:g` 数量不一致**（运行时会抛 `IllegalFormatException`）、以及**与默认完全相同的值**（可能是漏翻，也可能本就是专名符号）。前三类会让 CI 失败，第四类只提示。脚本会跳过 `translatable="false"` 的条目（内嵌图片、常量），它们与语言无关，纳入比对只会产生噪音。
+- 新增 `scripts/check_i18n.py` 并接入 CI，跨 main / mobile / leanback 三个 source set 比对默认（英文）与各语言，覆盖 `<string>` 与 `<string-array>` 两类资源，报告四类问题：**缺失的键**（会回退英文）、**多余的键**、**占位符或 `xliff:g` 数量不一致**（运行时会抛 `IllegalFormatException`）、以及**与默认完全相同的值**（可能是漏翻，也可能本就是专名符号）。前三类会让 CI 失败，第四类只提示。脚本会跳过 `translatable="false"` 的条目（内嵌图片、常量），它们与语言无关，纳入比对只会产生噪音。
 
 ### 说明
 
-- 比对后三语言完全一致：main 各 1145 条（另有 1 条 `translatable="false"`），mobile 各 35 条，leanback 各 11 条。
-- 「与默认相同」的 43 条经逐条确认，全是符号（`→` `←` `-` `+`）、技术专名（`Token` `Proxy` `UA` `EPG` `LUT` `DoH` `GitHub`）、URL/目录示例或纯占位符格式串（`%1$s · %2$s`），不需要翻译。
+- 比对后三语言完全一致：main 各 1164 条（含 19 个选项数组，另有 1 条 `translatable="false"`），mobile 各 36 条（含 1 个），leanback 各 11 条。
+- 「与默认相同」的 45 条经逐条确认均无需翻译：符号（`→` `←` `-` `+`）、技术专名（`Token` `Proxy` `UA` `EPG` `LUT` `DoH` `GitHub`）、播放内核与渲染名（`EXO`/`IJK`/`MPV`、`Surface`/`Texture`）、URL/目录示例，以及纯占位符格式串（`%1$s · %2$s`）。
 
 ## 未发布 — 三处安全修复（重定向绕过 ×2、DASH XML 解析）
 

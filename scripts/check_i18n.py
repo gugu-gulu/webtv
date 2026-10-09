@@ -12,6 +12,9 @@ walks every source set (main / mobile / leanback) and reports four things:
    default is what the code was written against, so a translation that drops a
    %s crashes with IllegalFormatException at runtime
 
+Both <string> and <string-array> are covered; the option-label arrays are as
+user-visible as any single string.
+
 Exit status is 1 when anything from group 1, 2 or 4 is found, so it can gate CI.
 Group 3 is reported but does not fail: some values are legitimately the same.
 
@@ -42,12 +45,17 @@ def note(kind, message):
 
 
 def load(path):
-    """name -> (full text, placeholder list)."""
+    """name -> (full text, placeholder list). Covers <string> and <string-array>.
+
+    Arrays matter as much as single strings: select_scale / select_reset and friends
+    are user-visible option labels, and a locale that omits the whole array falls
+    back to English for every entry at once.
+    """
     if not path.exists():
         return None
     root = ET.parse(path).getroot()
     out = {}
-    for node in root.findall('string'):
+    for node in list(root.findall('string')) + list(root.findall('string-array')):
         name = node.get('name')
         if name is None:
             continue
@@ -55,7 +63,10 @@ def load(path):
         # identical everywhere; comparing them only produces noise.
         if node.get('translatable') == 'false':
             continue
-        text = ''.join(node.itertext())
+        if node.tag == 'string-array':
+            text = '\n'.join(''.join(item.itertext()) for item in node.findall('item'))
+        else:
+            text = ''.join(node.itertext())
         out[name] = (text, PLACEHOLDER.findall(text))
     return out
 
